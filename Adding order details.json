@@ -1,0 +1,95 @@
+{
+  "name": "Adding order details",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "create",
+        "databaseId": 363850,
+        "tableId": 823661,
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": 7078086,
+              "fieldValue": "={{ $json.body.orderid }}"
+            },
+            {
+              "fieldId": 7078087,
+              "fieldValue": "={{ $json.body.email }}"
+            },
+            {
+              "fieldId": 7078088,
+              "fieldValue": "={{ $json.body.name }}"
+            },
+            {
+              "fieldId": 7078091,
+              "fieldValue": "={{ $json.body.product_name }}"
+            },
+            {
+              "fieldId": 7078099,
+              "fieldValue": "={{ $json.body.amount }}"
+            },
+            {
+              "fieldId": 7078115,
+              "fieldValue": "={{ $json.body.price }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.baserow",
+      "typeVersion": 1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "6950cf98-7d76-40a5-8db5-b7b5960881ee",
+      "name": "Add Order Data",
+      "credentials": {
+        "baserowApi": {
+          "id": "IWVswImvtWJlQca7",
+          "name": "Baserow account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "DataBase",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "7433b2e0-1dbf-45f7-9f2d-31e78b7ae2e7",
+      "name": "Get order details ",
+      "webhookId": "e4977c1f-49cc-4b2b-90b0-2fe799ec01de"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get order details ": {
+      "main": [
+        [
+          {
+            "node": "Add Order Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "d80f3198-3ddb-4631-89ea-a8967f65f7dc",
+  "meta": {
+    "instanceId": "761ef39009a5409b3e382e61a40fa0fa6ea18087620d751c6812b74ded675f4e"
+  },
+  "id": "z3usVR-PZp0-OXQOpCTNM",
+  "tags": []
+}

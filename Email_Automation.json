@@ -1,0 +1,71 @@
+{
+  "name": "Email_Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "Email",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c38baa75-0d21-4a3f-b009-62c98a454ed4",
+      "name": "Getting email contents",
+      "webhookId": "0ecd2a58-f24b-41d8-b7d8-e97891ad3815"
+    },
+    {
+      "parameters": {
+        "sendTo": "crincle.cupcakes@gmail.com",
+        "subject": "={{ $json.body.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "6d80a046-05b4-44f4-b014-250e38dd1306",
+      "name": "Send a message",
+      "webhookId": "507f7a04-bb31-486b-8daf-2c1bb0ef3da7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "lcBQs0J0oJwaqckK",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Getting email contents": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "889ebe58-c396-4cea-b30f-81cbe973d167",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "761ef39009a5409b3e382e61a40fa0fa6ea18087620d751c6812b74ded675f4e"
+  },
+  "id": "6Ws6OqbPbXASzexcB0T-x",
+  "tags": []
+}
