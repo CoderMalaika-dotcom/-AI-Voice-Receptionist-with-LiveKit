@@ -34,9 +34,13 @@ Basically:
 🌸 Why This Project Is Cute and Serious
 
 ✔ Real-world automation
+
 ✔ Clean API contracts
+
 ✔ Scalable backend design
+
 ✔ No-code + code harmony
+
 ✔ Bakery-themed but enterprise-ready
 
 Tech girls can bake and build systems 💕
