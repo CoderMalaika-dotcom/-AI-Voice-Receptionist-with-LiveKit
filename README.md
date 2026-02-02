@@ -45,9 +45,13 @@ Tech girls can bake and build systems 💕
 🧁 Future Glow-Ups
 
 ✨ Payment gateway integration
+
 ✨ WhatsApp order confirmations
+
 ✨ Admin dashboard
+
 ✨ Voice-first ordering experience
+
 ✨ Inventory tracking
 
 
