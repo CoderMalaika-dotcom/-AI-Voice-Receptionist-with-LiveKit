@@ -277,10 +277,4 @@ if __name__ == "__main__":
     logger.info(f"🔑 API Secret: {'SET ✅' if os.getenv('LIVEKIT_API_SECRET') else 'NOT SET ❌'}")
     logger.info("="*80 + "\n")
     
-    # Add worker options for better connection handling
-    agents.cli.run_app(
-        server,
-        WorkerOptions(
-            agent_name="crincle-cupkakes-agent",
-        )
-    )
+    agents.cli.run_app(server)
