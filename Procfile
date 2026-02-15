@@ -1,1 +1,1 @@
-worker: python Mala-voice-agent/Agent.py
+worker: python Mala-voice-agent/Agent.py start
