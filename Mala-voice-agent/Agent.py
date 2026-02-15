@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from livekit import agents, rtc
-from livekit.agents import AgentServer, AgentSession, Agent, room_io
+from livekit.agents import AgentServer, AgentSession, Agent, room_io, WorkerOptions
 from livekit.plugins import (
     noise_cancellation,
     groq,
@@ -13,14 +13,18 @@ from datetime import datetime
 import json
 import re
 import logging
+import asyncio
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 load_dotenv(".env.local")
 
-# Get backend URL from environment variable (works for both local and Railway)
+# Get backend URL from environment variable
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 logger.info(f"🔧 Backend URL configured: {BACKEND_URL}")
@@ -155,58 +159,71 @@ server = AgentServer()
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
     
-    logger.info(f"🚀 Agent starting for room: {ctx.room.name}")
-    logger.info(f"🔌 Connected to LiveKit: {os.getenv('LIVEKIT_URL')}")
+    logger.info("="*80)
+    logger.info(f"🚀 NEW SESSION STARTED")
+    logger.info(f"📍 Room: {ctx.room.name}")
+    logger.info(f"🔗 Room SID: {ctx.room.sid if hasattr(ctx.room, 'sid') else 'N/A'}")
+    logger.info(f"🌐 LiveKit URL: {os.getenv('LIVEKIT_URL')}")
+    logger.info("="*80)
     
-    session = AgentSession(
-        llm=groq.LLM(model="llama-3.3-70b-versatile"),
-        tts=deepgram.TTS(model="aura-luna-en"),
-        stt=deepgram.STT()
-    )
-
-    bakery_agent = BakeryAssistant()
-
-    # Monitor agent responses for order confirmation
-    @session.on("agent_speech")
-    def on_agent_speech(text: str):
-        """Monitor agent speech for order confirmation pattern"""
-        logger.info(f"🗣️ Agent said: {text[:100]}...")
-        
-        if "ORDER_CONFIRMED:" in text:
-            logger.info("✅ Order confirmation detected!")
-            # Parse the order details
-            try:
-                # Extract the order confirmation line
-                confirmation_text = text.split("ORDER_CONFIRMED:")[1].split("\n")[0]
-                parts = [p.strip() for p in confirmation_text.split("|")]
-                
-                if len(parts) >= 4:
-                    order_data = {
-                        "customer_name": parts[0],
-                        "email": parts[1],
-                        "items": parts[2],
-                        "total_price": int(re.sub(r'[^\d]', '', parts[3]))  # Extract numbers only
-                    }
-                    logger.info(f"📋 Parsed order data: {order_data}")
-                    send_order_to_backend(order_data)
-                else:
-                    logger.error(f"❌ Invalid order format. Expected 4 parts, got {len(parts)}")
-                    logger.error(f"Parts: {parts}")
-                    
-            except Exception as e:
-                logger.error(f"❌ Error parsing order: {e}")
-                logger.error(f"Text received: {text}")
-
-    # Track participant connections
+    # Track room events
     @ctx.room.on("participant_connected")
     def on_participant_connected(participant: rtc.RemoteParticipant):
-        logger.info(f"👤 Participant connected: {participant.identity} (kind: {participant.kind})")
+        logger.info("="*60)
+        logger.info(f"👤 PARTICIPANT CONNECTED")
+        logger.info(f"Identity: {participant.identity}")
+        logger.info(f"Kind: {participant.kind}")
+        logger.info(f"SID: {participant.sid}")
+        logger.info("="*60)
 
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant: rtc.RemoteParticipant):
         logger.info(f"👋 Participant disconnected: {participant.identity}")
 
+    @ctx.room.on("track_subscribed")
+    def on_track_subscribed(track: rtc.Track, publication: rtc.TrackPublication, participant: rtc.RemoteParticipant):
+        logger.info(f"🎵 Track subscribed: {track.kind} from {participant.identity}")
+
     try:
+        logger.info("🔧 Creating session with Groq + Deepgram...")
+        
+        session = AgentSession(
+            llm=groq.LLM(model="llama-3.3-70b-versatile"),
+            tts=deepgram.TTS(model="aura-luna-en"),
+            stt=deepgram.STT()
+        )
+
+        bakery_agent = BakeryAssistant()
+
+        # Monitor agent responses for order confirmation
+        @session.on("agent_speech")
+        def on_agent_speech(text: str):
+            """Monitor agent speech for order confirmation pattern"""
+            logger.info(f"🗣️ Agent said: {text[:150]}...")
+            
+            if "ORDER_CONFIRMED:" in text:
+                logger.info("✅ ORDER CONFIRMATION DETECTED!")
+                try:
+                    confirmation_text = text.split("ORDER_CONFIRMED:")[1].split("\n")[0]
+                    parts = [p.strip() for p in confirmation_text.split("|")]
+                    
+                    if len(parts) >= 4:
+                        order_data = {
+                            "customer_name": parts[0],
+                            "email": parts[1],
+                            "items": parts[2],
+                            "total_price": int(re.sub(r'[^\d]', '', parts[3]))
+                        }
+                        logger.info(f"📋 Parsed order data: {order_data}")
+                        send_order_to_backend(order_data)
+                    else:
+                        logger.error(f"❌ Invalid order format. Expected 4 parts, got {len(parts)}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error parsing order: {e}")
+
+        logger.info("🎬 Starting session...")
+        
         await session.start(
             room=ctx.room,
             agent=bakery_agent,
@@ -220,8 +237,13 @@ async def my_agent(ctx: agents.JobContext):
             ),
         )
 
-        logger.info("✅ Session started successfully")
+        logger.info("✅ Session started successfully!")
 
+        # Wait a bit before greeting
+        await asyncio.sleep(1)
+
+        logger.info("👋 Sending initial greeting...")
+        
         # Initial greeting
         await session.generate_reply(
             instructions="""You're answering a call at Crincle Cupkakes bakery.
@@ -233,15 +255,32 @@ Say: "Hi! Thanks for calling Crincle Cupkakes. What can I get for you today?"
 Then STOP and listen."""
         )
         
-        logger.info("👋 Initial greeting sent")
+        logger.info("✅ Initial greeting sent!")
         
     except Exception as e:
-        logger.error(f"❌ Error in session: {e}")
+        logger.error("="*60)
+        logger.error(f"❌ ERROR IN SESSION")
+        logger.error(f"Error: {e}")
+        logger.error("="*60)
+        import traceback
+        logger.error(traceback.format_exc())
         raise
 
 
 if __name__ == "__main__":
-    logger.info("🎬 Starting Crincle Cupkakes AI Agent")
+    logger.info("\n" + "="*80)
+    logger.info("🎬 STARTING CRINCLE CUPKAKES AI AGENT")
+    logger.info("="*80)
     logger.info(f"📍 Backend URL: {BACKEND_URL}")
-    logger.info(f"🔑 LiveKit URL: {os.getenv('LIVEKIT_URL', 'Not set')}")
-    logger.info(f"🔑 API Key configured: {'Yes' if os.getenv('LIVEKIT_API_KEY') else 'No'}")
+    logger.info(f"🔑 LiveKit URL: {os.getenv('LIVEKIT_URL', 'NOT SET')}")
+    logger.info(f"🔑 API Key: {'SET ✅' if os.getenv('LIVEKIT_API_KEY') else 'NOT SET ❌'}")
+    logger.info(f"🔑 API Secret: {'SET ✅' if os.getenv('LIVEKIT_API_SECRET') else 'NOT SET ❌'}")
+    logger.info("="*80 + "\n")
+    
+    # Add worker options for better connection handling
+    agents.cli.run_app(
+        server,
+        WorkerOptions(
+            agent_name="crincle-cupkakes-agent",
+        )
+    )
