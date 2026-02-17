@@ -1,276 +1,440 @@
 from dotenv import load_dotenv
-from livekit import agents, rtc
-from livekit.agents import AgentServer, AgentSession, Agent, room_io
+from livekit import agents
+from livekit.agents import AgentServer, AgentSession, Agent, room_io, RoomInputOptions, BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
 from livekit.plugins import (
     noise_cancellation,
-    groq,
+    openai,
     deepgram,
-    silero
+    bey,
 )
 import os
 import requests
-from datetime import datetime
-import json
 import re
 import logging
+from datetime import datetime
+from typing import Dict, List, Optional
+import json
+import asyncio
 
-# Configure logging
+from tools import send_email  # LiveKit @function_tool — given to the LLM
+from prompt import (
+    AGENT_INSTRUCTIONS,
+    GREETING_INSTRUCTIONS,
+    HOT_TRANSFER_INSTRUCTIONS,
+    COLD_TRANSFER_INSTRUCTIONS,
+    HOLD_START_INSTRUCTIONS,
+    HOLD_END_INSTRUCTIONS,
+)
+
+# =========================
+# Logging Configuration
+# =========================
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("CrincleCupkakes")
 
 load_dotenv(".env.local")
 
-# Get backend URL from environment variable
-BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+BACKEND_URL = os.getenv("BACKEND_URL")
+TRANSFER_PHONE = os.getenv("TRANSFER_PHONE", "+1234567890")
 
-logger.info(f"🔧 Backend URL configured: {BACKEND_URL}")
+# =========================
+# FAQ Knowledge Base
+# =========================
+FAQ_KNOWLEDGE = {
+    "hours": {
+        "keywords": ["hours", "open", "close", "timing", "time", "when open"],
+        "answer": "We're open Monday to Saturday, 8 AM to 8 PM, and Sunday 10 AM to 6 PM."
+    },
+    "location": {
+        "keywords": ["location", "address", "where", "directions", "find you"],
+        "answer": "We're located at 123 Main Street, Karachi. We're right next to the National Bank on Shahrah-e-Faisal."
+    },
+    "delivery": {
+        "keywords": ["delivery", "deliver", "shipping", "courier"],
+        "answer": "Yes! We deliver within Karachi. Delivery is Rs. 200 for orders under Rs. 2000, and free for orders above that. It takes 45-60 minutes."
+    },
+    "payment": {
+        "keywords": ["payment", "pay", "cash", "card", "online"],
+        "answer": "We accept cash, all major cards, and online payment through JazzCash, Easypaisa, and bank transfer."
+    },
+    "custom_orders": {
+        "keywords": ["custom", "personalized", "special", "design", "theme"],
+        "answer": "Absolutely! We do custom cakes and cupcakes. Just give us 24 hours notice for custom designs. Prices start from Rs. 1500."
+    },
+    "ingredients": {
+        "keywords": ["ingredients", "allergen", "gluten", "dairy", "vegan", "halal"],
+        "answer": "All our products are 100% halal. We can do gluten-free and dairy-free options with 24 hours notice. Please let us know about any allergies!"
+    },
+    "prices": {
+        "keywords": ["price", "cost", "how much", "expensive"],
+        "answer": "Our regular cupcakes are Rs. 150 each, premium ones Rs. 250. Cakes start from Rs. 1200 for 1 pound. Want me to check something specific?"
+    },
+    "cancellation": {
+        "keywords": ["cancel", "refund", "change order"],
+        "answer": "You can cancel or modify orders up to 6 hours before delivery. Full refund for cancellations before that. After that, we can try our best but charges may apply."
+    },
+    "bulk_orders": {
+        "keywords": ["bulk", "party", "event", "wedding", "corporate", "large order"],
+        "answer": "We love bulk orders! For events, we offer 10% off on orders above 50 cupcakes. Please give us 48 hours notice for large quantities."
+    },
+    "flavors": {
+        "keywords": ["flavor", "flavours", "variety", "what kind", "types"],
+        "answer": "We have chocolate, vanilla, red velvet, lemon, strawberry, cookies & cream, and our special Pakistani chai cupcakes! We also have seasonal flavors."
+    }
+}
+
+# =========================
+# Call Analytics Tracker
+# =========================
+class CallAnalytics:
+    def __init__(self):
+        self.start_time = datetime.now()
+        self.end_time = None
+        self.transcript: List[Dict] = []
+        self.customer_data: Dict = {}
+        self.intent = "unknown"
+        self.sentiment = "neutral"
+        self.questions_asked: List[str] = []
+        self.faq_triggered: List[str] = []
+        self.hold_count = 0
+        self.interruption_count = 0
+        self.transfer_requested = False
+        self.order_placed = False
+
+    def add_transcript(self, speaker: str, text: str):
+        self.transcript.append({
+            "timestamp": datetime.now().isoformat(),
+            "speaker": speaker,
+            "text": text
+        })
+
+    def detect_intent(self):
+        transcript_text = " ".join([t["text"].lower() for t in self.transcript if t["speaker"] == "customer"])
+        if any(word in transcript_text for word in ["order", "buy", "purchase", "want"]):
+            self.intent = "purchase"
+        elif any(word in transcript_text for word in ["complain", "issue", "problem", "wrong"]):
+            self.intent = "complaint"
+        elif any(word in transcript_text for word in ["question", "ask", "wondering", "how", "what", "when"]):
+            self.intent = "inquiry"
+        elif any(word in transcript_text for word in ["cancel", "refund", "change"]):
+            self.intent = "modification"
+        else:
+            self.intent = "general"
+
+    def generate_summary(self) -> Dict:
+        self.end_time = datetime.now()
+        duration = (self.end_time - self.start_time).total_seconds()
+        self.detect_intent()
+        return {
+            "call_metadata": {
+                "start_time": self.start_time.isoformat(),
+                "end_time": self.end_time.isoformat(),
+                "duration_seconds": duration,
+                "duration_formatted": f"{int(duration // 60)}m {int(duration % 60)}s"
+            },
+            "customer_data": self.customer_data,
+            "call_analysis": {
+                "primary_intent": self.intent,
+                "sentiment": self.sentiment,
+                "order_placed": self.order_placed,
+                "transfer_requested": self.transfer_requested,
+                "hold_count": self.hold_count,
+                "interruption_count": self.interruption_count,
+                "faqs_addressed": self.faq_triggered,
+                "questions_count": len(self.questions_asked)
+            },
+            "transcript": self.transcript,
+            "lead_quality": self._assess_lead_quality()
+        }
+
+    def _assess_lead_quality(self) -> str:
+        score = 0
+        if self.order_placed:
+            return "converted"
+        if self.customer_data.get("email"):
+            score += 30
+        if self.customer_data.get("customer_name"):
+            score += 20
+        if self.intent == "purchase":
+            score += 30
+        if len(self.questions_asked) > 2:
+            score += 10
+        if "custom" in self.faq_triggered:
+            score += 10
+        if score >= 70:
+            return "hot"
+        elif score >= 40:
+            return "warm"
+        else:
+            return "cold"
 
 
-def send_order_to_backend(order_data):
-    """Send order to backend API"""
-    logger.info(f"\n{'='*60}")
-    logger.info(f"📦 SENDING ORDER TO BACKEND")
-    logger.info(f"{'='*60}")
-    logger.info(f"Customer: {order_data.get('customer_name')}")
-    logger.info(f"Email: {order_data.get('email')}")
-    logger.info(f"Items: {order_data.get('items')}")
-    logger.info(f"Total: Rs. {order_data.get('total_price')}")
-    logger.info(f"Backend URL: {BACKEND_URL}")
-    logger.info(f"{'='*60}\n")
-    
+# =========================
+# Backend HTTP Helpers
+# (Server-side calls — NOT LLM tools)
+# =========================
+def _post_to_backend(endpoint: str, data: dict, label: str) -> bool:
+    """Generic helper to POST data to backend endpoints."""
     try:
         response = requests.post(
-            f"{BACKEND_URL}/place-order",
-            json=order_data,
-            timeout=10,
-            headers={"Content-Type": "application/json"}
+            f"{BACKEND_URL}/{endpoint}",
+            json=data,
+            timeout=10
         )
-        
         if response.status_code == 200:
-            logger.info(f"✅ Order saved and email sent!")
-            logger.info(f"Response: {response.json()}")
+            logger.info(f"✅ {label} stored successfully")
             return True
         else:
-            logger.error(f"⚠️ Backend error: {response.status_code}")
-            logger.error(f"Response: {response.text}")
+            logger.error(f"❌ {label} failed: {response.text}")
             return False
-            
-    except requests.exceptions.ConnectionError:
-        logger.error(f"❌ Cannot connect to backend at {BACKEND_URL}")
-        logger.error("Make sure your backend is deployed and the BACKEND_URL is correct")
-        return False
-        
-    except requests.exceptions.Timeout:
-        logger.error(f"❌ Request timeout to {BACKEND_URL}")
-        return False
-        
     except Exception as e:
-        logger.error(f"❌ Error sending order: {str(e)}")
+        logger.error(f"❌ {label} connection failed: {e}")
         return False
 
 
-class BakeryAssistant(Agent):
-    def __init__(self) -> None:
-        self.current_order = {
-            'customer_name': None,
-            'email': None,
-            'items': None,
-            'total_price': None
-        }
-        
-        instructions = """You are a friendly, professional AI assistant for Crincle Cupkakes bakery.
-
-CRITICAL RULES - READ CAREFULLY:
-- Ask ONE question at a time, then STOP
-- Keep responses SHORT (2-3 sentences max)
-- Let the customer talk MORE than you
-- Never ramble or assume
-- Sound warm and human, not robotic
-
-MANDATORY ORDER FLOW (FOLLOW THIS EXACTLY):
-You MUST collect ALL of this information in order:
-
-1. Ask what they want to order
-2. Ask quantity/size
-3. Ask: "Can I get your name for the order?"
-4. Ask: "And your email address for the confirmation?" (REQUIRED)
-5. Ask: "Would you like delivery or pickup?"
-6. If delivery: Ask "What's the delivery address?"
-7. Ask: "When would you like this?"
-8. Calculate total and say: "Your total is Rs. [amount]. Does everything sound correct?"
-9. When customer confirms, say EXACTLY: "ORDER_CONFIRMED: [Name] | [Email] | [Items] | [Total]"
-10. Then say: "Perfect! You'll receive a confirmation email at [email] shortly. Thanks for choosing Crincle Cupkakes!"
-
-EXAMPLE of step 9:
-"ORDER_CONFIRMED: Sarah Khan | sarah@email.com | 6 Belgian Chocolate Fudge Cupcakes | 1500"
-
-IMPORTANT: You MUST use the exact format "ORDER_CONFIRMED:" followed by the pipe-separated details.
-
-BAKERY INFORMATION:
-
-Shop Name: Crincle Cupkakes
-
-MENU (Know this well):
-
-CUPCAKES (Most Popular):
-- Classic Vanilla Swirl - Rs. 250 each
-- Belgian Chocolate Fudge - Rs. 300 each
-- Red Velvet Cream Cheese - Rs. 280 each
-- Nutella Lava Cupcake - Rs. 350 each
-- Lemon Zest - Rs. 240 each
-- Salted Caramel Delight - Rs. 320 each
-
-Box of 6 cupcakes: Rs. 1500
-Box of 12 cupcakes: Rs. 2800
-
-SIGNATURE CAKES:
-- Chocolate Truffle Cake - Rs. 2500 (1 pound), Rs. 4500 (2 pounds)
-- Vanilla Strawberry Cream Cake - Rs. 2800 (1 pound), Rs. 5000 (2 pounds)
-- Red Velvet Cake - Rs. 3000 (1 pound), Rs. 5500 (2 pounds)
-- Ferrero Rocher Cake - Rs. 3500 (1 pound), Rs. 6500 (2 pounds)
-- Lotus Biscoff Cake - Rs. 3200 (1 pound), Rs. 6000 (2 pounds)
-
-OTHER DESSERTS:
-- Brownies (Walnut/Fudge/Lotus) - Rs. 150 each, Box of 6: Rs. 800
-- Chocolate Chip Cookies - Rs. 100 each, Box of 12: Rs. 1000
-- Dessert Boxes (assorted) - Rs. 2000
-
-Operating Hours: Mon-Sat: 10 AM – 10 PM | Sun: 12 PM – 9 PM
-Delivery: Same-day (orders before 6 PM), 60-90 minutes
-
-ALLERGIES: Contains dairy, eggs, wheat. Some items have nuts.
-
-IMPORTANT:
-- DO NOT use asterisks or actions
-- ALWAYS get name and email
-- Use the ORDER_CONFIRMED format exactly as shown
-- Sound like a real friendly bakery staff member"""
-
-        super().__init__(instructions=instructions)
+def backend_place_order(order_data: dict) -> bool:
+    return _post_to_backend("place-order", order_data, "Order")
 
 
+def backend_call_analytics(analytics_data: dict) -> bool:
+    return _post_to_backend("call-analytics", analytics_data, "Analytics")
+
+
+def backend_store_lead(lead_data: dict) -> bool:
+    return _post_to_backend("leads", lead_data, "Lead")
+
+
+def backend_send_email(email_data: dict) -> bool:
+    """
+    Sends email notifications via the backend HTTP service.
+    Used for internal/system emails (order confirmations, call summaries).
+    This is NOT the same as the send_email LLM tool in tools.py.
+    """
+    return _post_to_backend("send-email", email_data, "Email")
+
+
+# =========================
+# Enhanced Bakery Agent
+# =========================
+class EnhancedBakeryAssistant(Agent):
+    def __init__(self, analytics: CallAnalytics) -> None:
+        self.analytics = analytics
+        self.on_hold = False
+        self.hold_duration = 0
+        super().__init__(
+            instructions=AGENT_INSTRUCTIONS,  # ← from prompt.py
+            tools=[send_email],               # ← from tools.py (LLM can call this)
+        )
+
+    async def handle_hold(self, duration: int):
+        self.on_hold = True
+        self.hold_duration = duration
+        self.analytics.hold_count += 1
+        logger.info(f"⏸ Holding for {duration} seconds")
+        await asyncio.sleep(duration)
+        self.on_hold = False
+        logger.info("▶️ Resuming from hold")
+
+
+# =========================
+# FAQ Detector
+# =========================
+def detect_faq(text: str) -> Optional[str]:
+    text_lower = text.lower()
+    for category, faq in FAQ_KNOWLEDGE.items():
+        if any(keyword in text_lower for keyword in faq["keywords"]):
+            return faq["answer"]
+    return None
+
+
+# =========================
+# LiveKit Server
+# =========================
 server = AgentServer()
 
 
 @server.rtc_session()
-async def my_agent(ctx: agents.JobContext):
-    
-    logger.info("="*80)
-    logger.info(f"🚀 NEW SESSION STARTED")
-    logger.info(f"📍 Room: {ctx.room.name}")
-    logger.info(f"🔗 Room SID: {ctx.room.sid if hasattr(ctx.room, 'sid') else 'N/A'}")
-    logger.info(f"🌐 LiveKit URL: {os.getenv('LIVEKIT_URL')}")
-    logger.info("="*80)
-    
-    # Track room events
-    @ctx.room.on("participant_connected")
-    def on_participant_connected(participant: rtc.RemoteParticipant):
-        logger.info("="*60)
-        logger.info(f"👤 PARTICIPANT CONNECTED")
-        logger.info(f"Identity: {participant.identity}")
-        logger.info(f"Kind: {participant.kind}")
-        logger.info(f"SID: {participant.sid}")
-        logger.info("="*60)
+async def entrypoint(ctx: agents.JobContext):
 
-    @ctx.room.on("participant_disconnected")
-    def on_participant_disconnected(participant: rtc.RemoteParticipant):
-        logger.info(f"👋 Participant disconnected: {participant.identity}")
+    logger.info(f"🚀 Session started in room: {ctx.room.name}")
 
-    @ctx.room.on("track_subscribed")
-    def on_track_subscribed(track: rtc.Track, publication: rtc.TrackPublication, participant: rtc.RemoteParticipant):
-        logger.info(f"🎵 Track subscribed: {track.kind} from {participant.identity}")
+    analytics = CallAnalytics()
 
-    try:
-        logger.info("🔧 Creating session with Groq + Deepgram...")
-        
-        session = AgentSession(
-            llm=groq.LLM(model="llama-3.3-70b-versatile"),
-            tts=deepgram.TTS(model="aura-luna-en"),
-            stt=deepgram.STT()
-        )
+    session = AgentSession(
+        llm=openai.realtime.RealtimeModel(voice="coral"),
+        stt=deepgram.STT(),
+        tts=deepgram.TTS(model="aura-luna-en"),
+    )
 
-        bakery_agent = BakeryAssistant()
+    agent = EnhancedBakeryAssistant(analytics)
 
-        # Monitor agent responses for order confirmation
-        @session.on("agent_speech")
-        def on_agent_speech(text: str):
-            """Monitor agent speech for order confirmation pattern"""
-            logger.info(f"🗣️ Agent said: {text[:150]}...")
-            
-            if "ORDER_CONFIRMED:" in text:
-                logger.info("✅ ORDER CONFIRMATION DETECTED!")
-                try:
-                    confirmation_text = text.split("ORDER_CONFIRMED:")[1].split("\n")[0]
-                    parts = [p.strip() for p in confirmation_text.split("|")]
-                    
-                    if len(parts) >= 4:
-                        order_data = {
-                            "customer_name": parts[0],
-                            "email": parts[1],
-                            "items": parts[2],
-                            "total_price": int(re.sub(r'[^\d]', '', parts[3]))
-                        }
-                        logger.info(f"📋 Parsed order data: {order_data}")
-                        send_order_to_backend(order_data)
-                    else:
-                        logger.error(f"❌ Invalid order format. Expected 4 parts, got {len(parts)}")
-                        
-                except Exception as e:
-                    logger.error(f"❌ Error parsing order: {e}")
+    # =========================
+    # Avatar Setup (Beyond Presence)
+    # =========================
+    avatar = bey.AvatarSession(
+        avatar_id=os.getenv("BEY_AVATAR_ID"),
+    )
 
-        logger.info("🎬 Starting session...")
-        
-        await session.start(
-            room=ctx.room,
-            agent=bakery_agent,
-            room_options=room_io.RoomOptions(
-                audio_input=room_io.AudioInputOptions(
-                    noise_cancellation=lambda params:
-                        noise_cancellation.BVCTelephony()
-                        if params.participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
-                        else noise_cancellation.BVC(),
-                ),
-            ),
-        )
+    # Start the avatar and wait for it to join the room
+    await avatar.start(session, room=ctx.room)
+    logger.info("🎭 Avatar joined the room")
 
-        logger.info("✅ Session started successfully!")
+    # =========================
+    # Handle Customer Speech
+    # =========================
+    @session.on("user_speech")
+    def handle_user_speech(text: str):
+        logger.info(f"👤 Customer: {text}")
+        analytics.add_transcript("customer", text)
+        faq_answer = detect_faq(text)
+        if faq_answer:
+            logger.info(f"📚 FAQ triggered: {faq_answer}")
+            analytics.faq_triggered.append(text[:50])
 
-        logger.info("👋 Sending initial greeting...")
-        
-        # Initial greeting
-        await session.generate_reply(
-            instructions="""You're answering a call at Crincle Cupkakes bakery.
+    # =========================
+    # Handle Agent Speech
+    # =========================
+    @session.on("agent_speech")
+    def handle_agent_speech(text: str):
+        logger.info(f"🗣 Agent: {text}")
+        analytics.add_transcript("agent", text)
 
-Keep it VERY SHORT and warm.
+        # === ORDER CONFIRMATION ===
+        if "ORDER_CONFIRMED:" in text:
+            try:
+                data = text.split("ORDER_CONFIRMED:")[1].strip()
+                parts = [p.strip() for p in data.split("|")]
+                if len(parts) == 4:
+                    order_data = {
+                        "customer_name": parts[0],
+                        "email": parts[1],
+                        "items": parts[2],
+                        "total_price": int(re.sub(r"[^\d]", "", parts[3])),
+                        "timestamp": datetime.now().isoformat(),
+                        "order_source": "voice_call"
+                    }
+                    logger.info(f"📦 Order Placed: {order_data}")
+                    analytics.customer_data.update({
+                        "customer_name": parts[0],
+                        "email": parts[1],
+                        "order_items": parts[2],
+                        "order_value": order_data["total_price"]
+                    })
+                    analytics.order_placed = True
+                    backend_place_order(order_data)
+                    backend_send_email({
+                        "to": parts[1],
+                        "subject": "Order Confirmation - Crincle Cupkakes",
+                        "type": "order_confirmation",
+                        "data": order_data
+                    })
+            except Exception as e:
+                logger.error(f"❌ Order parsing failed: {e}")
 
-Say: "Hi! Thanks for calling Crincle Cupkakes. What can I get for you today?"
+        # === HOT TRANSFER ===
+        if "TRANSFER_HOT:" in text:
+            reason = text.split("TRANSFER_HOT:")[1].strip()
+            logger.warning(f"📞 HOT TRANSFER requested: {reason}")
+            analytics.transfer_requested = True
+            asyncio.create_task(session.generate_reply(
+                instructions=HOT_TRANSFER_INSTRUCTIONS
+            ))
 
-Then STOP and listen."""
-        )
-        
-        logger.info("✅ Initial greeting sent!")
-        
-    except Exception as e:
-        logger.error("="*60)
-        logger.error(f"❌ ERROR IN SESSION")
-        logger.error(f"Error: {e}")
-        logger.error("="*60)
-        import traceback
-        logger.error(traceback.format_exc())
-        raise
+        # === COLD TRANSFER ===
+        if "TRANSFER_COLD:" in text:
+            reason = text.split("TRANSFER_COLD:")[1].strip()
+            logger.info(f"📞 COLD TRANSFER requested: {reason}")
+            analytics.transfer_requested = True
+            asyncio.create_task(session.generate_reply(
+                instructions=COLD_TRANSFER_INSTRUCTIONS
+            ))
+
+        # === HOLD REQUEST ===
+        if "HOLD_REQUEST:" in text:
+            try:
+                duration = int(re.search(r'\d+', text.split("HOLD_REQUEST:")[1]).group())
+                logger.info(f"⏸ Hold requested for {duration} seconds")
+
+                async def handle_hold_sequence():
+                    await session.generate_reply(instructions=HOLD_START_INSTRUCTIONS)
+                    await agent.handle_hold(duration)
+                    await session.generate_reply(instructions=HOLD_END_INSTRUCTIONS)
+
+                asyncio.create_task(handle_hold_sequence())
+            except Exception as e:
+                logger.error(f"❌ Hold parsing failed: {e}")
+
+    # =========================
+    # Interruption Detection
+    # =========================
+    @session.on("user_started_speaking")
+    def on_interruption():
+        logger.info("⚡ Customer interrupted")
+        analytics.interruption_count += 1
+
+    # =========================
+    # Call End Handler
+    # =========================
+    @session.on("session_ended")
+    def on_call_end():
+        logger.info("📞 Call ended - Generating analytics...")
+        call_summary = analytics.generate_summary()
+        backend_call_analytics(call_summary)
+
+        if analytics.customer_data.get("email") or analytics.customer_data.get("customer_name"):
+            lead_data = {
+                **analytics.customer_data,
+                "lead_quality": call_summary["lead_quality"],
+                "intent": analytics.intent,
+                "source": "voice_call",
+                "timestamp": datetime.now().isoformat(),
+                "call_duration": call_summary["call_metadata"]["duration_seconds"]
+            }
+            backend_store_lead(lead_data)
+
+        backend_send_email({
+            "to": "team@crinclecupkakes.com",
+            "subject": f"Call Summary - {analytics.customer_data.get('customer_name', 'Unknown')}",
+            "type": "call_summary",
+            "data": call_summary
+        })
+        logger.info(f"✅ Call Summary: {json.dumps(call_summary, indent=2)}")
+
+    # =========================
+    # Start Session
+    # =========================
+    await session.start(
+        room=ctx.room,
+        agent=agent,
+        room_input_options=RoomInputOptions(
+            noise_cancellation=noise_cancellation.BVC(),
+            video_enabled=True,   # Required for avatar video stream
+        ),
+    )
+
+    # =========================
+    # Background Audio (typing sounds while agent thinks)
+    # =========================
+    background_audio = BackgroundAudioPlayer(
+        thinking_sound=[
+            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.7),
+            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.7),
+        ],
+    )
+    await background_audio.start(room=ctx.room, agent_session=session)
+    logger.info("🔊 Background audio started")
+
+    # Initial greeting
+    await session.generate_reply(instructions=GREETING_INSTRUCTIONS)
 
 
+# =========================
+# Run App
+# =========================
 if __name__ == "__main__":
-    logger.info("\n" + "="*80)
-    logger.info("🎬 STARTING CRINCLE CUPKAKES AI AGENT")
-    logger.info("="*80)
-    logger.info(f"📍 Backend URL: {BACKEND_URL}")
-    logger.info(f"🔑 LiveKit URL: {os.getenv('LIVEKIT_URL', 'NOT SET')}")
-    logger.info(f"🔑 API Key: {'SET ✅' if os.getenv('LIVEKIT_API_KEY') else 'NOT SET ❌'}")
-    logger.info(f"🔑 API Secret: {'SET ✅' if os.getenv('LIVEKIT_API_SECRET') else 'NOT SET ❌'}")
-    logger.info("="*80 + "\n")
-    
+    logger.info("🎬 Starting Enhanced Crincle Cupkakes AI Agent...")
+    logger.info("✨ Features: Interruption handling, Call transfer, Hold, FAQ, send_email tool, Analytics")
     agents.cli.run_app(server)
