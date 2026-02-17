@@ -1,4 +1,5 @@
-
+fastapi
+uvicorn
 livekit-agents==1.3.12
 livekit==1.0.23
 livekit-plugins-bey
@@ -9,4 +10,5 @@ livekit-plugins-noise-cancellation==0.2.5
 groq
 requests
 python-dotenv
+
 
