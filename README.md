@@ -1,75 +1,30 @@
-###🧁 CRINCLE CUPCAKES
-##🎭 AI AVATAR SALES AGENT
-A real-time interactive AI bakery employee powered by voice, avatar streaming, and automation — deployed globally on Railway.
-#🚀 What This Agent Is
+# 🧁 AI Sales Agent for Crincle Cupkakes 
+A MultiLingual AI-powered interactive avatar sales agent that talks to customers in real-time, processes orders, stores them in the database, and triggers backend automations — all deployed globally on Railway.
 
-An AI-powered interactive avatar sales agent that:
 
-Talks to customers in real-time
+---
 
-Processes bakery orders
+## ✨ What This Agent Does
+💬 Converses via chat and voice
+🎭 Appears as a live animated bakery avatar
+🎤 Responds with expressive speech
+🧾 Collects order details intelligently
+🧠 Remembers customer context
+💳 (Optional) Handles payment intent
+🗃 Stores structured orders in Baserow
+🔗 Sends order payload to n8n via webhook
+📨 Triggers confirmations + automations
+📊 Logs analytics events
+📦 Checks inventory before confirming orders
 
-Stores structured data
+From:
 
-Triggers backend automations
+“Hi, I want 12 chocolate cupcakes”
 
-Streams a live animated avatar
-
-All wrapped in a production-ready architecture.
-
-🌟 Now Featuring
-
-🎭 Real-time animated AI avatar
-🎤 Voice-first ordering
-📹 Live video streaming
-🌍 Global cloud deployment
-📊 Business automation pipeline
-
-✨ What This Enhanced Agent Does
-💬 Customer Interaction
-
-Converses via chat and voice
-
-Responds with expressive speech
-
-Appears as a live animated bakery avatar
-
-🧾 Order Processing
-
-Collects order details intelligently
-
-Parses quantity, flavors & custom messages
-
-Handles optional payment intent
-
-Checks inventory before confirming
-
-🧠 Intelligence Layer
-
-Remembers returning customers
-
-Stores favorite flavors
-
-Logs analytics events
-
-Tracks sales metrics
-
-🔗 Automation Engine
-
-Stores structured orders in Baserow
-
-Sends order payload to n8n via webhook
-
-Triggers confirmations & backend automations
-
-🪄 From This…
-
-“Hi, I want 12 chocolate cupcakes.”
-
-…To This:
+To:
 
 ✔ Verified order
-✔ Stored in database
+✔ Stored in DB
 ✔ Automation triggered
 ✔ Confirmation sent
 ✔ Inventory updated
@@ -77,184 +32,64 @@ Triggers confirmations & backend automations
 
 All through a live AI bakery avatar 🧁✨
 
-🎭 Avatar System (NEW)
-
-Powered by LiveKit
-
-The Agent Now:
-
-Publishes video + audio tracks
-
-Streams via WebRTC
-
-Runs fully in the cloud (Railway backend)
-
-Renders in browser via React frontend
-
-⚙️ How It Works
-
-1️⃣ Python agent generates response
-2️⃣ TTS converts text → speech
-3️⃣ Avatar engine lip-syncs to audio
-4️⃣ Video track published to LiveKit
-5️⃣ Browser renders avatar globally
-
-No local rendering. Fully cloud-native.
-
-🛠 Production Tech Stack
-Layer	Technology
-🧠 AI Brain	Groq
-📡 Realtime Engine	LiveKit
-☁ Backend Hosting	Railway
-🔌 API Framework	FastAPI
-🎭 Avatar Streaming	WebRTC
-🗃 Database	Baserow
-🔄 Automation	n8n
-🔐 Config	python-dotenv
-🌐 Frontend	React
-🏗 Deployment Architecture (Global Ready)
-🖥 Backend
-
-Python AI Agent
-
-Webhook listeners
-
-Order processor
-
-Hosted on Railway
-
-🎭 Avatar Layer
-
-LiveKit video publishing
-
-TTS lip-sync
-
-WebRTC streaming
-
-🌐 Frontend
-
-React site deployed on:
-
-Vercel
-OR
-
-Netlify
-
-🔄 Automation
-
-n8n workflows
-
-Email + WhatsApp triggers
-
-Admin alerts
-
-Dashboard updates
-
-🧠 Advanced Features
-🧁 1. Smart Order Parsing
-
-Understands:
-
-Quantity
-
-Flavors
-
-Custom messages
-
-Delivery dates
-
-Budget constraints
-
-📦 2. Inventory Awareness
-
-Real-time stock validation
-
-Low-stock warnings
-
-Smart substitutions
-
-📊 3. Sales Analytics
-
-Tracks:
-
-Conversion rate
-
-Popular flavors
-
-Peak ordering hours
-
-🎯 4. Context Memory
-
-Remembers:
-
-Returning customers
-
-Previous orders
-
-Preferences
-
-💖 5. Expressive Avatar Modes
-
-Avatar can:
-
-Smile when confirming order
-
-Think while calculating
-
-Celebrate completed orders
-
-React to unavailable items
-
-🔮 Future Glow-Ups
-
-✨ Stripe payment integration
-✨ WhatsApp ordering
-✨ Admin analytics dashboard
-✨ CRM tagging
-✨ Loyalty system
-✨ Multilingual support
-✨ Auto-upselling engine
-✨ Dynamic pricing
-✨ Franchise-ready scaling
-
-🏢 Enterprise-Ready Improvements
-
-✔ Structured logging
-✔ Robust error handling
-✔ Webhook retry logic
-✔ Schema validation
-✔ Rate limiting
-✔ Health check endpoints
-✔ Dev/Prod isolation
-✔ CI/CD ready
-
-🌍 How To Verify Avatar Is Global
-
-Open LiveKit dashboard
-
-Join room from another device
-
-Confirm video + audio tracks
-
-Test on different networks
-
-Check Railway logs
-
-If avatar appears everywhere → globally live 🥹✨
-
-💼 Why This Is No Longer “Just Cute”
+---
+
+## 🛠 Tech Stack
+Layer	Tech
+AI Brain	Groq
+Realtime Engine	LiveKit
+Backend Hosting	Railway
+API Layer	FastAPI
+Avatar Streaming	WebRTC
+Database	Baserow
+Automation	n8n
+Secrets	python-dotenv
+Frontend	React
+
+| Layer              |     Tech      |
+|--------------------|---------------|
+| AI Model           | OpenAI        |
+| Backend            | Python        |
+| API Framework      | FastAPI       |
+| Automation         |  n8n          |
+| Database           | Baserow       |
+| Email              |Webhooks       |
+| Environment Config | python-dotenv |
+|Backend Hosting	   | Railway       |
+|Realtime Engine	   |LiveKit        |
+
+
+---
+🌸 Why This Project Is Cute and Serious
 
 ✔ Real-time AI
-✔ Live avatar streaming
-✔ Cloud-native infrastructure
-✔ Automated order processing
-✔ Scalable backend
-✔ Business analytics
+✔ Realtime media streaming
+✔ Cloud-native deployment
+✔ Webhook automation
+✔ Scalable infrastructure
+✔ Business intelligence pipeline
 
-🧁 This Is Not a Cupcake Bot.
-🚀 This Is a Digital Sales Employee.
+This is not a cupcake bot.
+
+This is a Digital Sales Employee.
+
+The Tech girls can bake and build systems 💕
+
+---
+🧁 Future Glow-Ups
+
+✨ Payment gateway integration
+
+✨ WhatsApp order confirmations
+
+✨ Admin dashboard
+
+✨ Inventory tracking
+
+✨ Interactive Frontend 
+
+
+---
 💖 Author
 
-Malaika
-NUCES FAST Islamabad
-AI-C 💅✨
+Vibe coded by Malaika 
