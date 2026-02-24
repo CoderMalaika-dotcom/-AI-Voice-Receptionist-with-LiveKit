@@ -1,14 +1,23 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from db import save_order
 from email_utils import send_order_confirmation
 import logging
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# ✅ ADD CORS HERE
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class Order(BaseModel):
@@ -37,5 +46,6 @@ def place_order(order: Order):
         order.items,
         order.total_price
     )
+
 
     return {"status": "Order placed successfully"}
